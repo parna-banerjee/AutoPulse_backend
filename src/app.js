@@ -4,6 +4,7 @@ const profileRoutes = require("./routes/profile.routes");
 const authRoutes = require("./routes/auth.routes");
 const memberRoutes = require("./routes/member.routes");
 const documentRoutes = require("./routes/document.routes");
+const { notFound, errorHandler } = require("./middleware/error.middleware");
 
 const app = express();
 
@@ -20,5 +21,9 @@ app.get("/", (req, res) => {
         message: "Medical App Backend is running"
     });
 });
+
+// Error handling must be registered last, after all routes.
+app.use(notFound);
+app.use(errorHandler);
 
 module.exports = app;

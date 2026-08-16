@@ -21,10 +21,26 @@ const startServer = async () => {
 
     } catch (error) {
 
-        console.error("Database connection failed:", error.message);
+        console.error("Database connection failed:");
+        console.error(error);
 
         process.exit(1);
     }
 };
+
+// Catch errors thrown outside the request cycle so the process
+// logs the real cause instead of dying silently.
+process.on("unhandledRejection", (reason) => {
+    console.error("--- Unhandled Promise Rejection ---");
+    console.error(reason);
+});
+
+process.on("uncaughtException", (error) => {
+    console.error("--- Uncaught Exception ---");
+    console.error(error);
+    // An uncaught exception leaves the app in an unknown state; exit so a
+    // process manager (nodemon / pm2) can restart it cleanly.
+    process.exit(1);
+});
 
 startServer();
