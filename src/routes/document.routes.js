@@ -4,7 +4,9 @@ const multer = require("multer");
 const {
     uploadDocument,
     getDocuments,
+    getDocument,
     downloadDocument,
+    extractDocument,
     deleteDocument
 } = require("../controllers/document.controller");
 
@@ -39,6 +41,18 @@ router.get(
     "/:id/download",
     authenticate,
     downloadDocument
+);
+
+router.get(
+    "/:id",
+    authenticate,
+    getDocument
+);
+
+router.post(
+    "/:id/extract",
+    authenticate,
+    extractDocument
 );
 
 router.delete(

@@ -2,6 +2,7 @@ require("dotenv").config();
 
 const app = require("./src/app");
 const pool = require("./src/config/db");
+const { startExtractionWorker } = require("./src/workers/extraction.worker");
 
 const PORT = process.env.PORT || 5000;
 
@@ -18,6 +19,9 @@ const startServer = async () => {
         app.listen(PORT, () => {
             console.log(`Server running on port ${PORT}`);
         });
+
+        // Start the background extraction worker (in-process).
+        startExtractionWorker();
 
     } catch (error) {
 
