@@ -4,6 +4,7 @@ const multer = require("multer");
 const {
     uploadDocument,
     getDocuments,
+    getMetrics,
     getDocument,
     downloadDocument,
     extractDocument,
@@ -35,6 +36,13 @@ router.get(
     "/",
     authenticate,
     getDocuments
+);
+
+// Must be before "/:id" so it isn't matched as an id.
+router.get(
+    "/metrics",
+    authenticate,
+    getMetrics
 );
 
 router.get(

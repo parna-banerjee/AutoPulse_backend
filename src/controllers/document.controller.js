@@ -145,6 +145,93 @@ const getDocuments = async (req, res) => {
 };
 
 
+// Aggregates numeric metrics from all of the user's extracted lab reports
+// into a time series per metric name, for charting.
+const getMetrics = async (req, res) => {
+
+    try {
+
+        const userId = req.user.id;
+
+        const [rows] = await pool.execute(
+            `SELECT extracted_data, created_at
+             FROM documents
+             WHERE user_id = ?
+               AND extraction_status = 'done'
+               AND document_type = 'lab_report'
+               AND extracted_data IS NOT NULL
+             ORDER BY created_at ASC`,
+            [userId]
+        );
+
+        const series = {};
+
+        for (const row of rows) {
+
+            let data = row.extracted_data;
+
+            // JSON columns usually arrive parsed, but guard for string form.
+            if (typeof data === "string") {
+                try {
+                    data = JSON.parse(data);
+                } catch {
+                    continue;
+                }
+            }
+
+            const metrics = data && data.metrics;
+
+            if (!Array.isArray(metrics)) {
+                continue;
+            }
+
+            for (const metric of metrics) {
+
+                if (!metric || !metric.name) {
+                    continue;
+                }
+
+                const value = Number(metric.value);
+
+                if (Number.isNaN(value)) {
+                    continue;
+                }
+
+                if (!series[metric.name]) {
+                    series[metric.name] = {
+                        name: metric.name,
+                        unit: metric.unit || "",
+                        reference_range: metric.reference_range || "",
+                        points: []
+                    };
+                }
+
+                series[metric.name].points.push({
+                    date: row.created_at,
+                    value
+                });
+            }
+        }
+
+        res.status(200).json({
+            success: true,
+            data: {
+                metrics: Object.values(series)
+            }
+        });
+
+    } catch (error) {
+
+        console.error(error);
+
+        res.status(500).json({
+            success: false,
+            message: "Failed to fetch metrics"
+        });
+    }
+};
+
+
 const getDocument = async (req, res) => {
 
     try {
@@ -377,6 +464,7 @@ const deleteDocument = async (req, res) => {
 module.exports = {
     uploadDocument,
     getDocuments,
+    getMetrics,
     getDocument,
     downloadDocument,
     extractDocument,
