@@ -8,6 +8,38 @@ const MAX_ATTEMPTS = Number(process.env.EXTRACTION_MAX_ATTEMPTS) || 3;
 // Prevents two ticks from overlapping if a batch runs longer than the interval.
 let running = false;
 
+// Ids this process is actively working on right now. Any row in 'processing'
+// that is NOT in this set belongs to a previous (dead/slept) process and is
+// safe to requeue — this self-heals jobs stranded when Render sleeps mid-job.
+const inFlight = new Set();
+
+
+// Requeue 'processing' jobs that this process isn't actually working on.
+const reclaimStrandedJobs = async () => {
+
+    if (inFlight.size === 0) {
+        const [result] = await pool.execute(
+            `UPDATE documents
+             SET extraction_status = 'pending'
+             WHERE extraction_status = 'processing'`
+        );
+        if (result.affectedRows > 0) {
+            console.log(`[extraction] reclaimed ${result.affectedRows} stranded job(s)`);
+        }
+        return;
+    }
+
+    const ids = [...inFlight];
+    const placeholders = ids.map(() => "?").join(",");
+    await pool.execute(
+        `UPDATE documents
+         SET extraction_status = 'pending'
+         WHERE extraction_status = 'processing'
+           AND id NOT IN (${placeholders})`,
+        ids
+    );
+};
+
 
 // Atomically claims the next pending job. Returns the job row or null.
 const claimNextJob = async () => {
@@ -44,6 +76,7 @@ const claimNextJob = async () => {
         return null;
     }
 
+    inFlight.add(job.id);
     return job;
 };
 
@@ -100,6 +133,8 @@ const processJob = async (job) => {
                 job.id
             ]
         );
+    } finally {
+        inFlight.delete(job.id);
     }
 };
 
@@ -113,6 +148,9 @@ const tick = async () => {
     running = true;
 
     try {
+
+        // Recover jobs stranded by a slept/dead process before claiming new ones.
+        await reclaimStrandedJobs();
 
         let job;
 
