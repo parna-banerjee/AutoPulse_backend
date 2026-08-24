@@ -12,7 +12,7 @@ const startServer = async () => {
 
         const connection = await pool.getConnection();
 
-        console.log("MySQL connected successfully");
+        console.log(`Database connected successfully (${process.env.DB_CLIENT || "mysql"})`);
 
         connection.release();
 

@@ -6,12 +6,16 @@ const emailService = require("./email.service");
 
 const registerMainMember = async (name, email, password) => {
 
+    // Store and compare emails lowercased so lookups are case-insensitive
+    // on both MySQL and Postgres.
+    const normalizedEmail = email.toLowerCase();
+
     const [existingUsers] = await pool.execute(
-        "SELECT id FROM users WHERE email = ?",
-        [email]
+        "SELECT id FROM users WHERE LOWER(email) = ?",
+        [normalizedEmail]
     );
 
-    
+
     if (existingUsers.length > 0) {
         throw new Error("Email already registered");
     }
@@ -22,13 +26,13 @@ const registerMainMember = async (name, email, password) => {
         `INSERT INTO users
         (name, email, password_hash, role)
         VALUES (?, ?, ?, 'MAIN_MEMBER')`,
-        [name, email, passwordHash]
+        [name, normalizedEmail, passwordHash]
     );
 
     const user = {
         id: result.insertId,
         name,
-        email,
+        email: normalizedEmail,
         role: "MAIN_MEMBER"
     };
 
@@ -49,9 +53,9 @@ const sendMemberOTP = async (email) => {
     const [users] = await pool.execute(
         `SELECT id, name, email, role
          FROM users
-         WHERE email = ?
+         WHERE LOWER(email) = ?
          AND role = 'MEMBER'`,
-        [email]
+        [email.toLowerCase()]
     );
 
     if (users.length === 0) {
@@ -89,9 +93,9 @@ const verifyMemberOTP = async (email, otp) => {
     const [users] = await pool.execute(
         `SELECT *
          FROM users
-         WHERE email = ?
+         WHERE LOWER(email) = ?
          AND role = 'MEMBER'`,
-        [email]
+        [email.toLowerCase()]
     );
 
     if (users.length === 0) {
@@ -140,9 +144,9 @@ const loginMainMember = async (name, password) => {
     const [users] = await pool.execute(
         `SELECT *
          FROM users
-         WHERE name = ?
+         WHERE LOWER(name) = ?
          AND role = 'MAIN_MEMBER'`,
-        [name]
+        [name.toLowerCase()]
     );
 
     if (users.length === 0) {

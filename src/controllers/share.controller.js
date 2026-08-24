@@ -6,19 +6,63 @@ const SHARE_TTL_MS = 30 * 60 * 1000; // 30 minutes
 const SIGNED_URL_EXPIRY = 60 * 60; // 1 hour
 
 
-// Creates a time-limited share token for the logged-in user's documents.
+// Creates a time-limited share token for a selected set of the user's docs.
 const createShare = async (req, res) => {
 
     try {
 
         const userId = req.user.id;
+        const { documentIds } = req.body;
+
+        if (!Array.isArray(documentIds) || documentIds.length === 0) {
+            return res.status(400).json({
+                success: false,
+                message: "Select at least one document to share"
+            });
+        }
+
+        // Keep only valid, distinct ids that actually belong to this user.
+        const requested = [
+            ...new Set(
+                documentIds
+                    .map((id) => Number(id))
+                    .filter((id) => Number.isInteger(id) && id > 0)
+            )
+        ];
+
+        if (requested.length === 0) {
+            return res.status(400).json({
+                success: false,
+                message: "Invalid document selection"
+            });
+        }
+
+        const placeholders = requested.map(() => "?").join(",");
+
+        const [owned] = await pool.execute(
+            `SELECT id
+             FROM documents
+             WHERE user_id = ?
+               AND id IN (${placeholders})`,
+            [userId, ...requested]
+        );
+
+        const ownedIds = owned.map((row) => row.id);
+
+        if (ownedIds.length === 0) {
+            return res.status(400).json({
+                success: false,
+                message: "None of the selected documents were found"
+            });
+        }
+
         const token = crypto.randomUUID();
         const expiresAt = new Date(Date.now() + SHARE_TTL_MS);
 
         await pool.execute(
-            `INSERT INTO document_shares (token, user_id, expires_at)
-             VALUES (?, ?, ?)`,
-            [token, userId, expiresAt]
+            `INSERT INTO document_shares (token, user_id, document_ids, expires_at)
+             VALUES (?, ?, ?, ?)`,
+            [token, userId, JSON.stringify(ownedIds), expiresAt]
         );
 
         res.status(201).json({
@@ -27,7 +71,8 @@ const createShare = async (req, res) => {
             data: {
                 token,
                 expires_at: expiresAt.toISOString(),
-                ttl_seconds: SHARE_TTL_MS / 1000
+                ttl_seconds: SHARE_TTL_MS / 1000,
+                document_count: ownedIds.length
             }
         });
 
@@ -48,7 +93,7 @@ const createShare = async (req, res) => {
 const resolveShare = async (token, res) => {
 
     const [shares] = await pool.execute(
-        `SELECT user_id, expires_at
+        `SELECT user_id, document_ids, expires_at
          FROM document_shares
          WHERE token = ?`,
         [token]
@@ -70,7 +115,20 @@ const resolveShare = async (token, res) => {
         return null;
     }
 
-    return shares[0];
+    const share = shares[0];
+
+    // JSON columns usually arrive parsed, but guard for string form.
+    let documentIds = share.document_ids;
+    if (typeof documentIds === "string") {
+        try {
+            documentIds = JSON.parse(documentIds);
+        } catch {
+            documentIds = [];
+        }
+    }
+    share.document_ids = Array.isArray(documentIds) ? documentIds : [];
+
+    return share;
 };
 
 
@@ -91,6 +149,19 @@ const getShare = async (req, res) => {
             [share.user_id]
         );
 
+        if (share.document_ids.length === 0) {
+            return res.status(200).json({
+                success: true,
+                data: {
+                    owner_name: owner.length ? owner[0].name : null,
+                    expires_at: share.expires_at,
+                    documents: []
+                }
+            });
+        }
+
+        const placeholders = share.document_ids.map(() => "?").join(",");
+
         const [documents] = await pool.execute(
             `SELECT
                 id,
@@ -103,8 +174,9 @@ const getShare = async (req, res) => {
                 created_at
              FROM documents
              WHERE user_id = ?
+               AND id IN (${placeholders})
              ORDER BY created_at DESC`,
-            [share.user_id]
+            [share.user_id, ...share.document_ids]
         );
 
         res.status(200).json({
@@ -138,6 +210,14 @@ const downloadSharedDocument = async (req, res) => {
         const share = await resolveShare(token, res);
         if (!share) {
             return;
+        }
+
+        // The requested document must be part of this share.
+        if (!share.document_ids.map(Number).includes(Number(id))) {
+            return res.status(404).json({
+                success: false,
+                message: "Document not found"
+            });
         }
 
         const [documents] = await pool.execute(

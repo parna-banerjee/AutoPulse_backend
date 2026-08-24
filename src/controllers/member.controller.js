@@ -15,9 +15,12 @@ const addMember = async (req, res) => {
 
         const mainMemberId = req.user.id;
 
+        // Normalize email so lookups are case-insensitive on MySQL and Postgres.
+        const normalizedEmail = email.toLowerCase();
+
         const [existingUser] = await pool.execute(
-            "SELECT id FROM users WHERE email = ?",
-            [email]
+            "SELECT id FROM users WHERE LOWER(email) = ?",
+            [normalizedEmail]
         );
 
         if (existingUser.length > 0) {
@@ -33,7 +36,7 @@ const addMember = async (req, res) => {
             VALUES (?, ?, 'MEMBER', ?, ?)`,
             [
                 name,
-                email,
+                normalizedEmail,
                 mainMemberId,
                 relationship
             ]
@@ -45,7 +48,7 @@ const addMember = async (req, res) => {
             data: {
                 id: result.insertId,
                 name,
-                email,
+                email: normalizedEmail,
                 relationship,
                 role: "MEMBER",
                 main_member_id: mainMemberId

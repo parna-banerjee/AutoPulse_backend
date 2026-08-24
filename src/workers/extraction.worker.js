@@ -85,9 +85,13 @@ const processJob = async (job) => {
         console.error(`[extraction] failed id=${job.id}: ${err.message}`);
 
         // Out of attempts -> give up ('failed'); otherwise requeue ('pending').
+        // CASE (not MySQL's IF) so the SQL works on both MySQL and Postgres.
         await pool.execute(
             `UPDATE documents
-             SET extraction_status = IF(extraction_attempts >= ?, 'failed', 'pending'),
+             SET extraction_status = CASE
+                     WHEN extraction_attempts >= ? THEN 'failed'
+                     ELSE 'pending'
+                 END,
                  extraction_error = ?
              WHERE id = ?`,
             [
