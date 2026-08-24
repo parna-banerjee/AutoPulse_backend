@@ -12,7 +12,9 @@ const genai = new GoogleGenAI({
     }
 });
 
-const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-flash-latest";
+// Pinned to a specific model: the "…-latest" flash alias has been hitting
+// sustained 503 "high demand". Override with GEMINI_MODEL if needed.
+const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-3.5-flash";
 
 module.exports = {
     genai,
