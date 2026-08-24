@@ -54,3 +54,15 @@ CREATE TABLE IF NOT EXISTS document_shares (
 );
 
 CREATE INDEX IF NOT EXISTS idx_shares_token ON document_shares (token);
+
+CREATE TABLE IF NOT EXISTS appointments (
+    id            SERIAL PRIMARY KEY,
+    user_id       INT NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+    title         VARCHAR(255) NOT NULL,
+    appt_date     VARCHAR(10) NOT NULL,
+    appt_time     VARCHAR(5) NOT NULL,
+    duration_mins INT NOT NULL DEFAULT 30,
+    location      VARCHAR(255),
+    notes         TEXT,
+    created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);

@@ -5,6 +5,7 @@ const authRoutes = require("./routes/auth.routes");
 const memberRoutes = require("./routes/member.routes");
 const documentRoutes = require("./routes/document.routes");
 const shareRoutes = require("./routes/share.routes");
+const appointmentRoutes = require("./routes/appointment.routes");
 const { notFound, errorHandler } = require("./middleware/error.middleware");
 
 const app = express();
@@ -17,6 +18,7 @@ app.use("/api/members", memberRoutes);
 app.use("/api/profile", profileRoutes);
 app.use("/api/documents", documentRoutes);
 app.use("/api/shares", shareRoutes);
+app.use("/api/appointments", appointmentRoutes);
 
 app.get("/", (req, res) => {
     res.json({
