@@ -1,37 +1,85 @@
 const nodemailer = require("nodemailer");
 
-// Timeouts so a stalled SMTP connection fails fast instead of hanging the
-// request forever (e.g. missing creds or a host that blocks SMTP).
+const SUBJECT = "AutoPulse - Login OTP";
+const bodyText = (otp) =>
+    `Your login OTP is ${otp}. This OTP is valid for 5 minutes.`;
+
+
+// Preferred on hosts that block SMTP ports (e.g. Render free tier): Brevo's
+// HTTP API over port 443. Requires BREVO_API_KEY and a verified sender.
+const sendViaBrevo = async (email, otp) => {
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 15000);
+
+    try {
+        const res = await fetch("https://api.brevo.com/v3/smtp/email", {
+            method: "POST",
+            headers: {
+                "api-key": process.env.BREVO_API_KEY,
+                "Content-Type": "application/json",
+                accept: "application/json"
+            },
+            body: JSON.stringify({
+                sender: {
+                    email: process.env.EMAIL_FROM || process.env.EMAIL_USER,
+                    name: "AutoPulse"
+                },
+                to: [{ email }],
+                subject: SUBJECT,
+                textContent: bodyText(otp)
+            }),
+            signal: controller.signal
+        });
+
+        if (!res.ok) {
+            const detail = await res.text();
+            throw new Error(
+                `Brevo send failed (${res.status}): ${detail.slice(0, 200)}`
+            );
+        }
+    } finally {
+        clearTimeout(timer);
+    }
+};
+
+
+// Fallback: SMTP via nodemailer. Works locally; may be blocked on some hosts.
 const transporter = nodemailer.createTransport({
     service: "gmail",
     auth: {
         user: process.env.EMAIL_USER,
         pass: process.env.EMAIL_PASSWORD
     },
-    // Force IPv4 — hosts without IPv6 egress can't reach Gmail's IPv6 SMTP.
     family: 4,
     connectionTimeout: 10000,
     greetingTimeout: 10000,
     socketTimeout: 15000
 });
 
-const sendOTPEmail = async (email, otp) => {
+const sendViaSmtp = async (email, otp) => {
 
-    // Fail clearly if email isn't configured, rather than stalling on SMTP.
     if (!process.env.EMAIL_USER || !process.env.EMAIL_PASSWORD) {
         throw new Error(
-            "Email is not configured (set EMAIL_USER and EMAIL_PASSWORD)"
+            "Email is not configured (set BREVO_API_KEY, or EMAIL_USER/EMAIL_PASSWORD)"
         );
     }
 
-    const mailOptions = {
+    await transporter.sendMail({
         from: process.env.EMAIL_USER,
         to: email,
-        subject: "Medical App - Login OTP",
-        text: `Your login OTP is ${otp}. This OTP is valid for 5 minutes.`
-    };
+        subject: SUBJECT,
+        text: bodyText(otp)
+    });
+};
 
-    await transporter.sendMail(mailOptions);
+
+const sendOTPEmail = async (email, otp) => {
+    // Prefer the HTTP API when configured; otherwise fall back to SMTP.
+    if (process.env.BREVO_API_KEY) {
+        return sendViaBrevo(email, otp);
+    }
+    return sendViaSmtp(email, otp);
 };
 
 module.exports = {
