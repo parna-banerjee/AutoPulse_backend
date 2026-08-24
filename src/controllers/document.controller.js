@@ -421,6 +421,55 @@ const extractDocument = async (req, res) => {
 };
 
 
+// Rename a document's display file name.
+const updateDocument = async (req, res) => {
+
+    try {
+
+        const { id } = req.params;
+        const { file_name } = req.body;
+
+        if (!file_name || !String(file_name).trim()) {
+            return res.status(400).json({
+                success: false,
+                message: "File name is required"
+            });
+        }
+
+        const { notFound, forbidden } = await loadAccessibleDocument(req, "id");
+
+        if (notFound) {
+            return res.status(404).json({ success: false, message: "Document not found" });
+        }
+        if (forbidden) {
+            return res.status(403).json({ success: false, message: "You do not have access to this document" });
+        }
+
+        const trimmed = String(file_name).trim().slice(0, 255);
+
+        await pool.execute(
+            "UPDATE documents SET file_name = ? WHERE id = ?",
+            [trimmed, id]
+        );
+
+        res.status(200).json({
+            success: true,
+            message: "Document renamed",
+            data: { id: Number(id), file_name: trimmed }
+        });
+
+    } catch (error) {
+
+        console.error(error);
+
+        res.status(500).json({
+            success: false,
+            message: "Failed to rename document"
+        });
+    }
+};
+
+
 const deleteDocument = async (req, res) => {
 
     try {
@@ -480,5 +529,6 @@ module.exports = {
     getDocument,
     downloadDocument,
     extractDocument,
+    updateDocument,
     deleteDocument
 };

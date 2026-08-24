@@ -8,6 +8,7 @@ const {
     getDocument,
     downloadDocument,
     extractDocument,
+    updateDocument,
     deleteDocument
 } = require("../controllers/document.controller");
 
@@ -61,6 +62,12 @@ router.post(
     "/:id/extract",
     authenticate,
     extractDocument
+);
+
+router.patch(
+    "/:id",
+    authenticate,
+    updateDocument
 );
 
 router.delete(
