@@ -139,18 +139,18 @@ const verifyMemberOTP = async (email, otp) => {
     };
 };
 
-const loginMainMember = async (name, password) => {
+const loginMainMember = async (email, password) => {
 
     const [users] = await pool.execute(
         `SELECT *
          FROM users
-         WHERE LOWER(name) = ?
+         WHERE LOWER(email) = ?
          AND role = 'MAIN_MEMBER'`,
-        [name.toLowerCase()]
+        [email.toLowerCase()]
     );
 
     if (users.length === 0) {
-        throw new Error("Invalid name or password");
+        throw new Error("Invalid email or password");
     }
 
     const user = users[0];
@@ -161,7 +161,7 @@ const loginMainMember = async (name, password) => {
     );
 
     if (!passwordMatch) {
-        throw new Error("Invalid name or password");
+        throw new Error("Invalid email or password");
     }
 
     const token = generateToken(user);

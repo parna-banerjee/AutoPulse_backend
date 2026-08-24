@@ -67,17 +67,17 @@ const login = async (req, res) => {
 
     try {
 
-        const { name, password } = req.body;
+        const { email, password } = req.body;
 
-        if (!name || !password) {
+        if (!email || !password) {
             return res.status(400).json({
                 success: false,
-                message: "Name and password are required"
+                message: "Email and password are required"
             });
         }
 
         const result = await authService.loginMainMember(
-            name,
+            email,
             password
         );
 

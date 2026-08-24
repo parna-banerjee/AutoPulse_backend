@@ -235,11 +235,10 @@ const downloadSharedDocument = async (req, res) => {
             });
         }
 
+        // No "download" option -> the browser opens PDFs/images inline.
         const { data, error } = await supabase.storage
             .from(DOCUMENTS_BUCKET)
-            .createSignedUrl(documents[0].storage_path, SIGNED_URL_EXPIRY, {
-                download: documents[0].file_name
-            });
+            .createSignedUrl(documents[0].storage_path, SIGNED_URL_EXPIRY);
 
         if (error) {
             console.error(error);

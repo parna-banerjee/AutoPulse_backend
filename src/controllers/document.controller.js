@@ -1,7 +1,26 @@
 const pool = require("../config/db");
 const { supabase, DOCUMENTS_BUCKET } = require("../config/supabase");
+const { canAccessUser, resolveTargetUserId } = require("../utils/access");
 
 const SIGNED_URL_EXPIRY = 60 * 60; // 1 hour
+
+// Fetches a document by :id and authorizes the caller against its owner
+// (self, or the main member who owns that member). Returns { doc } or a flag.
+const loadAccessibleDocument = async (req, columns) => {
+    const { id } = req.params;
+    const [rows] = await pool.execute(
+        `SELECT user_id, ${columns} FROM documents WHERE id = ?`,
+        [id]
+    );
+    if (rows.length === 0) {
+        return { notFound: true };
+    }
+    const allowed = await canAccessUser(req.user.id, rows[0].user_id);
+    if (!allowed) {
+        return { forbidden: true };
+    }
+    return { doc: rows[0] };
+};
 
 // Gemini can read images and PDFs inline. Skip extraction for anything else.
 const EXTRACTABLE_MIME_TYPES = [
@@ -19,7 +38,9 @@ const uploadDocument = async (req, res) => {
 
     try {
 
-        const userId = req.user.id;
+        // Owner is the selected member (if the caller may act for them),
+        // otherwise the caller themselves.
+        const userId = await resolveTargetUserId(req);
 
         if (!req.file) {
             return res.status(400).json({
@@ -94,6 +115,13 @@ const uploadDocument = async (req, res) => {
 
     } catch (error) {
 
+        if (error.statusCode) {
+            return res.status(error.statusCode).json({
+                success: false,
+                message: error.message
+            });
+        }
+
         console.error(error);
 
         res.status(500).json({
@@ -108,7 +136,7 @@ const getDocuments = async (req, res) => {
 
     try {
 
-        const userId = req.user.id;
+        const userId = await resolveTargetUserId(req);
 
         const [documents] = await pool.execute(
             `SELECT
@@ -135,6 +163,13 @@ const getDocuments = async (req, res) => {
 
     } catch (error) {
 
+        if (error.statusCode) {
+            return res.status(error.statusCode).json({
+                success: false,
+                message: error.message
+            });
+        }
+
         console.error(error);
 
         res.status(500).json({
@@ -151,7 +186,7 @@ const getMetrics = async (req, res) => {
 
     try {
 
-        const userId = req.user.id;
+        const userId = await resolveTargetUserId(req);
 
         const [rows] = await pool.execute(
             `SELECT extracted_data, created_at
@@ -222,6 +257,13 @@ const getMetrics = async (req, res) => {
 
     } catch (error) {
 
+        if (error.statusCode) {
+            return res.status(error.statusCode).json({
+                success: false,
+                message: error.message
+            });
+        }
+
         console.error(error);
 
         res.status(500).json({
@@ -236,37 +278,25 @@ const getDocument = async (req, res) => {
 
     try {
 
-        const userId = req.user.id;
-        const { id } = req.params;
-
-        const [documents] = await pool.execute(
-            `SELECT
-                id,
-                category,
-                file_name,
-                mime_type,
-                size_bytes,
-                document_type,
-                extracted_data,
-                extraction_status,
-                extraction_error,
-                created_at
-             FROM documents
-             WHERE id = ?
-             AND user_id = ?`,
-            [id, userId]
+        const { doc, notFound, forbidden } = await loadAccessibleDocument(
+            req,
+            `id, category, file_name, mime_type, size_bytes, document_type,
+             extracted_data, extraction_status, extraction_error, created_at`
         );
 
-        if (documents.length === 0) {
-            return res.status(404).json({
-                success: false,
-                message: "Document not found"
-            });
+        if (notFound) {
+            return res.status(404).json({ success: false, message: "Document not found" });
         }
+        if (forbidden) {
+            return res.status(403).json({ success: false, message: "You do not have access to this document" });
+        }
+
+        // Strip the internal owner id from the response.
+        delete doc.user_id;
 
         res.status(200).json({
             success: true,
-            data: documents[0]
+            data: doc
         });
 
     } catch (error) {
@@ -285,25 +315,19 @@ const downloadDocument = async (req, res) => {
 
     try {
 
-        const userId = req.user.id;
-        const { id } = req.params;
-
-        const [documents] = await pool.execute(
-            `SELECT storage_path, file_name
-             FROM documents
-             WHERE id = ?
-             AND user_id = ?`,
-            [id, userId]
+        const { doc, notFound, forbidden } = await loadAccessibleDocument(
+            req,
+            "storage_path, file_name"
         );
 
-        if (documents.length === 0) {
-            return res.status(404).json({
-                success: false,
-                message: "Document not found"
-            });
+        if (notFound) {
+            return res.status(404).json({ success: false, message: "Document not found" });
+        }
+        if (forbidden) {
+            return res.status(403).json({ success: false, message: "You do not have access to this document" });
         }
 
-        const { storage_path, file_name } = documents[0];
+        const { storage_path, file_name } = doc;
 
         const { data, error } = await supabase.storage
             .from(DOCUMENTS_BUCKET)
@@ -346,25 +370,20 @@ const extractDocument = async (req, res) => {
 
     try {
 
-        const userId = req.user.id;
         const { id } = req.params;
-
-        const [documents] = await pool.execute(
-            `SELECT mime_type
-             FROM documents
-             WHERE id = ?
-             AND user_id = ?`,
-            [id, userId]
+        const { doc, notFound, forbidden } = await loadAccessibleDocument(
+            req,
+            "mime_type"
         );
 
-        if (documents.length === 0) {
-            return res.status(404).json({
-                success: false,
-                message: "Document not found"
-            });
+        if (notFound) {
+            return res.status(404).json({ success: false, message: "Document not found" });
+        }
+        if (forbidden) {
+            return res.status(403).json({ success: false, message: "You do not have access to this document" });
         }
 
-        if (!EXTRACTABLE_MIME_TYPES.includes(documents[0].mime_type)) {
+        if (!EXTRACTABLE_MIME_TYPES.includes(doc.mime_type)) {
             return res.status(400).json({
                 success: false,
                 message: "This file type cannot be extracted"
@@ -377,9 +396,8 @@ const extractDocument = async (req, res) => {
              SET extraction_status = 'pending',
                  extraction_attempts = 0,
                  extraction_error = NULL
-             WHERE id = ?
-             AND user_id = ?`,
-            [id, userId]
+             WHERE id = ?`,
+            [id]
         );
 
         res.status(202).json({
@@ -407,27 +425,22 @@ const deleteDocument = async (req, res) => {
 
     try {
 
-        const userId = req.user.id;
         const { id } = req.params;
-
-        const [documents] = await pool.execute(
-            `SELECT storage_path
-             FROM documents
-             WHERE id = ?
-             AND user_id = ?`,
-            [id, userId]
+        const { doc, notFound, forbidden } = await loadAccessibleDocument(
+            req,
+            "storage_path"
         );
 
-        if (documents.length === 0) {
-            return res.status(404).json({
-                success: false,
-                message: "Document not found"
-            });
+        if (notFound) {
+            return res.status(404).json({ success: false, message: "Document not found" });
+        }
+        if (forbidden) {
+            return res.status(403).json({ success: false, message: "You do not have access to this document" });
         }
 
         const { error: storageError } = await supabase.storage
             .from(DOCUMENTS_BUCKET)
-            .remove([documents[0].storage_path]);
+            .remove([doc.storage_path]);
 
         if (storageError) {
             console.error(storageError);
@@ -439,9 +452,8 @@ const deleteDocument = async (req, res) => {
 
         await pool.execute(
             `DELETE FROM documents
-             WHERE id = ?
-             AND user_id = ?`,
-            [id, userId]
+             WHERE id = ?`,
+            [id]
         );
 
         res.status(200).json({

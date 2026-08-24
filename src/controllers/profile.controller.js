@@ -1,10 +1,11 @@
 const pool = require("../config/db");
+const { resolveTargetUserId } = require("../utils/access");
 
 const getProfile = async (req, res) => {
 
     try {
 
-        const userId = req.user.id;
+        const userId = await resolveTargetUserId(req);
 
         const [profiles] = await pool.execute(
             `SELECT
@@ -39,6 +40,13 @@ const getProfile = async (req, res) => {
 
     } catch (error) {
 
+        if (error.statusCode) {
+            return res.status(error.statusCode).json({
+                success: false,
+                message: error.message
+            });
+        }
+
         console.error(error);
 
         res.status(500).json({
@@ -53,7 +61,7 @@ const updateProfile = async (req, res) => {
 
     try {
 
-        const userId = req.user.id;
+        const userId = await resolveTargetUserId(req);
 
         const {
             dateOfBirth,
@@ -121,6 +129,13 @@ const updateProfile = async (req, res) => {
         });
 
     } catch (error) {
+
+        if (error.statusCode) {
+            return res.status(error.statusCode).json({
+                success: false,
+                message: error.message
+            });
+        }
 
         console.error(error);
 
