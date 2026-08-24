@@ -8,6 +8,8 @@ const transporter = nodemailer.createTransport({
         user: process.env.EMAIL_USER,
         pass: process.env.EMAIL_PASSWORD
     },
+    // Force IPv4 — hosts without IPv6 egress can't reach Gmail's IPv6 SMTP.
+    family: 4,
     connectionTimeout: 10000,
     greetingTimeout: 10000,
     socketTimeout: 15000

@@ -1,5 +1,10 @@
 require("dotenv").config();
 
+// Prefer IPv4 for all outbound DNS. Some hosts (e.g. Render) have no IPv6
+// egress, so hostnames that resolve to IPv6 (Gmail SMTP, Supabase direct)
+// would otherwise fail with ENETUNREACH.
+require("dns").setDefaultResultOrder("ipv4first");
+
 const app = require("./src/app");
 const pool = require("./src/config/db");
 const { startExtractionWorker } = require("./src/workers/extraction.worker");
