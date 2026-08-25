@@ -6,6 +6,7 @@ const memberRoutes = require("./routes/member.routes");
 const documentRoutes = require("./routes/document.routes");
 const shareRoutes = require("./routes/share.routes");
 const appointmentRoutes = require("./routes/appointment.routes");
+const chatRoutes = require("./routes/chat.routes");
 const { notFound, errorHandler } = require("./middleware/error.middleware");
 
 const app = express();
@@ -19,6 +20,7 @@ app.use("/api/profile", profileRoutes);
 app.use("/api/documents", documentRoutes);
 app.use("/api/shares", shareRoutes);
 app.use("/api/appointments", appointmentRoutes);
+app.use("/api/chat", chatRoutes);
 
 app.get("/", (req, res) => {
     res.json({
