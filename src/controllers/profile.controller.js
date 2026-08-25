@@ -65,12 +65,21 @@ const updateProfile = async (req, res) => {
         const userId = await resolveTargetUserId(req);
 
         const {
+            name,
             dateOfBirth,
             gender,
             height,
             weight,
             bloodGroup
         } = req.body;
+
+        // Name lives on the users table.
+        if (name && String(name).trim()) {
+            await pool.execute(
+                "UPDATE users SET name = ? WHERE id = ?",
+                [String(name).trim(), userId]
+            );
+        }
 
         const [existingProfile] = await pool.execute(
             `SELECT id
