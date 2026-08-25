@@ -1,12 +1,18 @@
 const pool = require("../config/db");
 const { supabase, DOCUMENTS_BUCKET } = require("../config/supabase");
-const { canAccessUser, resolveTargetUserId } = require("../utils/access");
+const {
+    canAccessUser,
+    resolveTargetUserId,
+    resolveViewableUserId,
+    sameFamily
+} = require("../utils/access");
 
 const SIGNED_URL_EXPIRY = 60 * 60; // 1 hour
 
-// Fetches a document by :id and authorizes the caller against its owner
-// (self, or the main member who owns that member). Returns { doc } or a flag.
-const loadAccessibleDocument = async (req, columns) => {
+// Fetches a document by :id and authorizes the caller against its owner.
+// view=true  -> any family member may read (list/view/download)
+// view=false -> only self or the owning main member may mutate
+const loadAccessibleDocument = async (req, columns, view = false) => {
     const { id } = req.params;
     const [rows] = await pool.execute(
         `SELECT user_id, ${columns} FROM documents WHERE id = ?`,
@@ -15,7 +21,9 @@ const loadAccessibleDocument = async (req, columns) => {
     if (rows.length === 0) {
         return { notFound: true };
     }
-    const allowed = await canAccessUser(req.user.id, rows[0].user_id);
+    const allowed = view
+        ? await sameFamily(req.user.id, rows[0].user_id)
+        : await canAccessUser(req.user.id, rows[0].user_id);
     if (!allowed) {
         return { forbidden: true };
     }
@@ -136,7 +144,8 @@ const getDocuments = async (req, res) => {
 
     try {
 
-        const userId = await resolveTargetUserId(req);
+        // Any family member can view another member's documents.
+        const userId = await resolveViewableUserId(req);
 
         const [documents] = await pool.execute(
             `SELECT
@@ -186,7 +195,7 @@ const getMetrics = async (req, res) => {
 
     try {
 
-        const userId = await resolveTargetUserId(req);
+        const userId = await resolveViewableUserId(req);
 
         const [rows] = await pool.execute(
             `SELECT extracted_data, created_at
@@ -281,7 +290,8 @@ const getDocument = async (req, res) => {
         const { doc, notFound, forbidden } = await loadAccessibleDocument(
             req,
             `id, category, file_name, mime_type, size_bytes, document_type,
-             extracted_data, extraction_status, extraction_error, created_at`
+             extracted_data, extraction_status, extraction_error, created_at`,
+            true
         );
 
         if (notFound) {
@@ -317,7 +327,8 @@ const downloadDocument = async (req, res) => {
 
         const { doc, notFound, forbidden } = await loadAccessibleDocument(
             req,
-            "storage_path, file_name"
+            "storage_path, file_name",
+            true
         );
 
         if (notFound) {

@@ -2,7 +2,7 @@
 
 CREATE TABLE IF NOT EXISTS appointments (
     id            INT AUTO_INCREMENT PRIMARY KEY,
-    user_id       INT NOT NULL UNIQUE,
+    user_id       INT NOT NULL,
     title         VARCHAR(255) NOT NULL,
     appt_date     VARCHAR(10) NOT NULL,
     appt_time     VARCHAR(5) NOT NULL,

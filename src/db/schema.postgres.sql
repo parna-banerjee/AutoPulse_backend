@@ -57,7 +57,7 @@ CREATE INDEX IF NOT EXISTS idx_shares_token ON document_shares (token);
 
 CREATE TABLE IF NOT EXISTS appointments (
     id            SERIAL PRIMARY KEY,
-    user_id       INT NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+    user_id       INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     title         VARCHAR(255) NOT NULL,
     appt_date     VARCHAR(10) NOT NULL,
     appt_time     VARCHAR(5) NOT NULL,
@@ -66,3 +66,7 @@ CREATE TABLE IF NOT EXISTS appointments (
     notes         TEXT,
     created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+-- If you already created appointments with a UNIQUE(user_id) (single
+-- appointment only), drop it to allow multiple:
+--   ALTER TABLE appointments DROP CONSTRAINT appointments_user_id_key;
