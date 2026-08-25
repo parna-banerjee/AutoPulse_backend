@@ -1,4 +1,5 @@
 const pool = require("../config/db");
+const { familyRootOf } = require("../utils/access");
 
 const addMember = async (req, res) => {
 
@@ -67,19 +68,19 @@ const addMember = async (req, res) => {
 };
 
 
+// Any family member can list the whole family (main member + all members).
 const getMembers = async (req, res) => {
 
     try {
 
-        const mainMemberId = req.user.id;
+        const root = await familyRootOf(req.user.id);
 
         const [members] = await pool.execute(
-            `SELECT id, name, email, role, created_at
+            `SELECT id, name, email, role, relationship, created_at
              FROM users
-             WHERE main_member_id = ?
-             AND role = 'MEMBER'
-             ORDER BY created_at DESC`,
-            [mainMemberId]
+             WHERE id = ? OR main_member_id = ?
+             ORDER BY role DESC, created_at ASC`,
+            [root, root]
         );
 
         res.status(200).json({
@@ -99,7 +100,48 @@ const getMembers = async (req, res) => {
 };
 
 
+// Main member only. Deletes a member that belongs to this main member.
+const deleteMember = async (req, res) => {
+
+    try {
+
+        const mainMemberId = req.user.id;
+        const { id } = req.params;
+
+        const [rows] = await pool.execute(
+            "SELECT id FROM users WHERE id = ? AND main_member_id = ? AND role = 'MEMBER'",
+            [id, mainMemberId]
+        );
+
+        if (rows.length === 0) {
+            return res.status(404).json({
+                success: false,
+                message: "Member not found"
+            });
+        }
+
+        // Documents/profile/appointments cascade via their FKs.
+        await pool.execute("DELETE FROM users WHERE id = ?", [id]);
+
+        res.status(200).json({
+            success: true,
+            message: "Member removed"
+        });
+
+    } catch (error) {
+
+        console.error(error);
+
+        res.status(500).json({
+            success: false,
+            message: "Failed to remove member"
+        });
+    }
+};
+
+
 module.exports = {
     addMember,
-    getMembers
+    getMembers,
+    deleteMember
 };

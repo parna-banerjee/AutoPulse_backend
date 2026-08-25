@@ -2,7 +2,8 @@ const express = require("express");
 
 const {
     addMember,
-    getMembers
+    getMembers,
+    deleteMember
 } = require("../controllers/member.controller");
 
 const {
@@ -12,6 +13,14 @@ const {
 
 const router = express.Router();
 
+// Any family member can view the family list.
+router.get(
+    "/",
+    authenticate,
+    getMembers
+);
+
+// Only the main member can add or remove members.
 router.post(
     "/",
     authenticate,
@@ -19,11 +28,11 @@ router.post(
     addMember
 );
 
-router.get(
-    "/",
+router.delete(
+    "/:id",
     authenticate,
     mainMemberOnly,
-    getMembers
+    deleteMember
 );
 
 module.exports = router;

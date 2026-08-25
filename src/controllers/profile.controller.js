@@ -1,11 +1,12 @@
 const pool = require("../config/db");
-const { resolveTargetUserId } = require("../utils/access");
+const { resolveTargetUserId, resolveViewableUserId } = require("../utils/access");
 
 const getProfile = async (req, res) => {
 
     try {
 
-        const userId = await resolveTargetUserId(req);
+        // Any family member can view another family member's profile.
+        const userId = await resolveViewableUserId(req);
 
         const [profiles] = await pool.execute(
             `SELECT
