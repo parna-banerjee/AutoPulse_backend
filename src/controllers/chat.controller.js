@@ -123,4 +123,82 @@ const chat = async (req, res) => {
     }
 };
 
-module.exports = { chat };
+// Streams the answer token-by-token as plain text (chunked response).
+const chatStream = async (req, res) => {
+
+    try {
+
+        const userId = await resolveViewableUserId(req);
+        const { message, history } = req.body;
+
+        if (!message || !String(message).trim()) {
+            return res.status(400).json({ success: false, message: "Message is required" });
+        }
+
+        const context = await buildContext(userId);
+        const systemInstruction =
+            "You are AutoPulse's health assistant. Answer using ONLY the health " +
+            "records provided. If the answer isn't there, say you don't have that " +
+            "information. Be concise and clear, and remind the user this is not a " +
+            "substitute for professional medical advice for health interpretations." +
+            "\n\nHEALTH RECORDS (JSON):\n" + JSON.stringify(context);
+
+        const contents = [];
+        if (Array.isArray(history)) {
+            for (const h of history.slice(-8)) {
+                contents.push({
+                    role: h.role === "assistant" ? "model" : "user",
+                    parts: [{ text: String(h.text || "") }]
+                });
+            }
+        }
+        contents.push({ role: "user", parts: [{ text: String(message) }] });
+
+        const config = { systemInstruction, temperature: 0.3 };
+
+        // Open the stream (with model fallback) and pull the first chunk before
+        // sending headers, so a 503 can still return a JSON error.
+        const openIterator = async (model) => {
+            const stream = await genai.models.generateContentStream({ model, contents, config });
+            const iter = stream[Symbol.asyncIterator]();
+            const first = await iter.next();
+            return { iter, first };
+        };
+
+        let handle;
+        try {
+            handle = await openIterator(GEMINI_MODEL);
+        } catch (err) {
+            if (GEMINI_MODEL !== FALLBACK_MODEL) {
+                handle = await openIterator(FALLBACK_MODEL);
+            } else {
+                throw err;
+            }
+        }
+
+        res.setHeader("Content-Type", "text/plain; charset=utf-8");
+        res.setHeader("Cache-Control", "no-cache");
+        res.setHeader("X-Accel-Buffering", "no"); // disable proxy buffering
+
+        if (!handle.first.done && handle.first.value?.text) {
+            res.write(handle.first.value.text);
+        }
+        for (let r = await handle.iter.next(); !r.done; r = await handle.iter.next()) {
+            if (r.value?.text) {
+                res.write(r.value.text);
+            }
+        }
+        res.end();
+
+    } catch (error) {
+
+        if (!res.headersSent) {
+            const status = error.statusCode || 500;
+            return res.status(status).json({ success: false, message: error.message || "Failed to get a response" });
+        }
+        console.error(error);
+        res.end();
+    }
+};
+
+module.exports = { chat, chatStream };
