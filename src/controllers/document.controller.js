@@ -432,18 +432,21 @@ const extractDocument = async (req, res) => {
 };
 
 
-// Rename a document's display file name.
+// Update a document's display name and/or category.
 const updateDocument = async (req, res) => {
 
     try {
 
         const { id } = req.params;
-        const { file_name } = req.body;
+        const { file_name, category } = req.body;
 
-        if (!file_name || !String(file_name).trim()) {
+        const hasName = file_name !== undefined && String(file_name).trim();
+        const hasCategory = category !== undefined;
+
+        if (!hasName && !hasCategory) {
             return res.status(400).json({
                 success: false,
-                message: "File name is required"
+                message: "Nothing to update"
             });
         }
 
@@ -456,17 +459,26 @@ const updateDocument = async (req, res) => {
             return res.status(403).json({ success: false, message: "You do not have access to this document" });
         }
 
-        const trimmed = String(file_name).trim().slice(0, 255);
+        const sets = [];
+        const values = [];
+        if (hasName) {
+            sets.push("file_name = ?");
+            values.push(String(file_name).trim().slice(0, 255));
+        }
+        if (hasCategory) {
+            sets.push("category = ?");
+            values.push(category ? String(category).slice(0, 100) : null);
+        }
+        values.push(id);
 
         await pool.execute(
-            "UPDATE documents SET file_name = ? WHERE id = ?",
-            [trimmed, id]
+            `UPDATE documents SET ${sets.join(", ")} WHERE id = ?`,
+            values
         );
 
         res.status(200).json({
             success: true,
-            message: "Document renamed",
-            data: { id: Number(id), file_name: trimmed }
+            message: "Document updated"
         });
 
     } catch (error) {
@@ -475,7 +487,7 @@ const updateDocument = async (req, res) => {
 
         res.status(500).json({
             success: false,
-            message: "Failed to rename document"
+            message: "Failed to update document"
         });
     }
 };
