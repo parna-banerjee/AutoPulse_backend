@@ -1,6 +1,7 @@
 const crypto = require("crypto");
 const pool = require("../config/db");
 const { supabase, DOCUMENTS_BUCKET } = require("../config/supabase");
+const { canAccessUser } = require("../utils/access");
 
 const SHARE_TTL_MS = 30 * 60 * 1000; // 30 minutes
 const SIGNED_URL_EXPIRY = 60 * 60; // 1 hour
@@ -39,15 +40,21 @@ const createShare = async (req, res) => {
 
         const placeholders = requested.map(() => "?").join(",");
 
-        const [owned] = await pool.execute(
-            `SELECT id
+        const [rows] = await pool.execute(
+            `SELECT id, user_id
              FROM documents
-             WHERE user_id = ?
-               AND id IN (${placeholders})`,
-            [userId, ...requested]
+             WHERE id IN (${placeholders})`,
+            [...requested]
         );
 
-        const ownedIds = owned.map((row) => row.id);
+        // Keep only docs the caller can access (their own, or — as main member
+        // — those of a member they own).
+        const ownedIds = [];
+        for (const row of rows) {
+            if (await canAccessUser(userId, row.user_id)) {
+                ownedIds.push(row.id);
+            }
+        }
 
         if (ownedIds.length === 0) {
             return res.status(400).json({
@@ -162,6 +169,8 @@ const getShare = async (req, res) => {
 
         const placeholders = share.document_ids.map(() => "?").join(",");
 
+        // Fetch strictly by the shared ids (the token is the capability); docs
+        // may belong to a member the sharer manages, not the sharer.
         const [documents] = await pool.execute(
             `SELECT
                 id,
@@ -173,10 +182,9 @@ const getShare = async (req, res) => {
                 extraction_status,
                 created_at
              FROM documents
-             WHERE user_id = ?
-               AND id IN (${placeholders})
+             WHERE id IN (${placeholders})
              ORDER BY created_at DESC`,
-            [share.user_id, ...share.document_ids]
+            [...share.document_ids]
         );
 
         res.status(200).json({
@@ -223,9 +231,8 @@ const downloadSharedDocument = async (req, res) => {
         const [documents] = await pool.execute(
             `SELECT storage_path, file_name
              FROM documents
-             WHERE id = ?
-             AND user_id = ?`,
-            [id, share.user_id]
+             WHERE id = ?`,
+            [id]
         );
 
         if (documents.length === 0) {

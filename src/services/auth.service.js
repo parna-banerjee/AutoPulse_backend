@@ -53,13 +53,12 @@ const sendMemberOTP = async (email) => {
     const [users] = await pool.execute(
         `SELECT id, name, email, role
          FROM users
-         WHERE LOWER(email) = ?
-         AND role = 'MEMBER'`,
+         WHERE LOWER(email) = ?`,
         [email.toLowerCase()]
     );
 
     if (users.length === 0) {
-        throw new Error("Member not found");
+        throw new Error("No account found for this email");
     }
 
     const otp = generateOTP();
@@ -93,13 +92,12 @@ const verifyMemberOTP = async (email, otp) => {
     const [users] = await pool.execute(
         `SELECT *
          FROM users
-         WHERE LOWER(email) = ?
-         AND role = 'MEMBER'`,
+         WHERE LOWER(email) = ?`,
         [email.toLowerCase()]
     );
 
     if (users.length === 0) {
-        throw new Error("Member not found");
+        throw new Error("No account found for this email");
     }
 
     const user = users[0];
