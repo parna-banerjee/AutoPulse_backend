@@ -1,6 +1,7 @@
 const pool = require("../config/db");
 const { supabase, DOCUMENTS_BUCKET } = require("../config/supabase");
 const { extractDocumentData } = require("../services/ocr.service");
+const { logAudit } = require("../utils/audit");
 
 const POLL_INTERVAL_MS = Number(process.env.EXTRACTION_POLL_MS) || 5000;
 const MAX_ATTEMPTS = Number(process.env.EXTRACTION_MAX_ATTEMPTS) || 3;
@@ -112,10 +113,24 @@ const processJob = async (job) => {
         );
 
         console.log(`[extraction] done id=${job.id}`);
+        logAudit({
+            level: "info",
+            source: "extraction",
+            action: "done",
+            message: `Document ${job.id} extracted`,
+            metadata: { documentId: job.id }
+        });
 
     } catch (err) {
 
         console.error(`[extraction] failed id=${job.id}: ${err.message}`);
+        logAudit({
+            level: "error",
+            source: "extraction",
+            action: "failed",
+            message: err.message,
+            metadata: { documentId: job.id, status: err.status || err.code }
+        });
 
         // Out of attempts -> give up ('failed'); otherwise requeue ('pending').
         // CASE (not MySQL's IF) so the SQL works on both MySQL and Postgres.

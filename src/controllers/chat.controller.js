@@ -1,6 +1,7 @@
 const pool = require("../config/db");
 const { genai, GEMINI_MODEL } = require("../config/gemini");
 const { resolveViewableUserId } = require("../utils/access");
+const { logAudit } = require("../utils/audit");
 
 // A less-contended model to fall back to when the primary is overloaded (503).
 const FALLBACK_MODEL = "gemini-flash-lite-latest";
@@ -119,6 +120,14 @@ const chat = async (req, res) => {
             return res.status(error.statusCode).json({ success: false, message: error.message });
         }
         console.error(error);
+        logAudit({
+            level: "error",
+            source: "chat",
+            action: "failed",
+            message: error.message,
+            userId: req.user && req.user.id,
+            metadata: { status: error.status || error.code }
+        });
         res.status(500).json({ success: false, message: "Failed to get a response" });
     }
 };
@@ -192,6 +201,14 @@ const chatStream = async (req, res) => {
 
     } catch (error) {
 
+        logAudit({
+            level: "error",
+            source: "chat",
+            action: "stream_failed",
+            message: error.message,
+            userId: req.user && req.user.id,
+            metadata: { status: error.status || error.code }
+        });
         if (!res.headersSent) {
             const status = error.statusCode || 500;
             return res.status(status).json({ success: false, message: error.message || "Failed to get a response" });
