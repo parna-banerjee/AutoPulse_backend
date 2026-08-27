@@ -91,12 +91,13 @@ Never put more than one of these pieces into a single field.`;
 const MAX_RETRIES = 3;
 const RETRYABLE_STATUS = [429, 500, 503];
 
+// A less-contended model to fall back to when the primary keeps failing.
+const FALLBACK_MODEL = "gemini-flash-lite-latest";
+
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-
-// Sends a file buffer to Gemini and returns the extracted structured data.
-// Retries transient errors (rate limit / overload) with exponential backoff.
-const extractDocumentData = async (buffer, mimeType) => {
+// One extraction call against a specific model, with backoff on transient errors.
+const callModel = async (model, buffer, mimeType) => {
 
     let lastError;
 
@@ -105,7 +106,7 @@ const extractDocumentData = async (buffer, mimeType) => {
         try {
 
             const response = await genai.models.generateContent({
-                model: GEMINI_MODEL,
+                model,
                 contents: [
                     {
                         role: "user",
@@ -128,30 +129,42 @@ const extractDocumentData = async (buffer, mimeType) => {
             });
 
             const text = response.text;
-
             if (!text) {
                 throw new Error("Gemini returned an empty response");
             }
-
             return JSON.parse(text);
 
         } catch (error) {
 
             lastError = error;
-
             const status = error.status || error.code;
             const isRetryable = RETRYABLE_STATUS.includes(Number(status));
 
             if (!isRetryable || attempt === MAX_RETRIES - 1) {
                 throw error;
             }
-
-            // 1s, 2s, 4s ...
-            await sleep(1000 * Math.pow(2, attempt));
+            await sleep(1000 * Math.pow(2, attempt)); // 1s, 2s, 4s ...
         }
     }
 
     throw lastError;
+};
+
+
+// Sends a file to Gemini and returns structured data. Retries the primary
+// model, then falls back to a lighter model if it's still failing.
+const extractDocumentData = async (buffer, mimeType) => {
+    try {
+        return await callModel(GEMINI_MODEL, buffer, mimeType);
+    } catch (error) {
+        if (GEMINI_MODEL !== FALLBACK_MODEL) {
+            console.error(
+                `[extraction] ${GEMINI_MODEL} failed (${error.status || error.code}); trying ${FALLBACK_MODEL}`
+            );
+            return await callModel(FALLBACK_MODEL, buffer, mimeType);
+        }
+        throw error;
+    }
 };
 
 
